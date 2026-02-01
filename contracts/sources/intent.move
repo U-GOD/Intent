@@ -364,5 +364,21 @@ module suiintents::intent {
         let IntentRegistry { id, total_intents: _, filled_intents: _, min_solver_stake: _ } = registry;
         object::delete(id);
     }
+    
+    #[test_only]
+    public fun create_test_auction(
+        start_rate: u64,
+        end_rate: u64,
+        start_time: u64,
+        duration_ms: u64,
+    ): DutchAuction {
+        DutchAuction {
+            start_rate,
+            end_rate,
+            start_time,
+            duration_ms,
+        }
+    }
 }
+
 
