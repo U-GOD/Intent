@@ -188,98 +188,6 @@ Gas paid by: Solver (gasless for user)
 
 ## Technical Components
 
-### Smart Contracts (Sui Move)
-
-#### Intent Registry (`intent_registry.move`)
-
-Core module managing intent lifecycle:
-
-```move
-struct Intent has key, store {
-    id: UID,
-    creator: address,
-    input_type: TypeName,
-    input_amount: u64,
-    output_type: TypeName,
-    min_output: u64,
-    deadline: u64,
-    status: u8,
-    escrow_id: ID,
-}
-
-// Entry functions
-public entry fun create_intent(...);
-public entry fun fill_intent(...);
-public entry fun cancel_intent(...);
-public entry fun expire_intent(...);
-```
-
-#### Dutch Auction (`dutch_auction.move`)
-
-Price discovery mechanism with linear decay:
-
-```move
-struct Auction has store {
-    start_rate: u64,      // Best rate at T=0
-    end_rate: u64,        // Minimum acceptable rate
-    start_time: u64,      // Auction start timestamp
-    duration: u64,        // Total auction duration
-}
-
-public fun get_current_rate(auction: &Auction, current_time: u64): u64;
-public fun validate_fill(auction: &Auction, offered_rate: u64): bool;
-```
-
-#### Escrow (`escrow.move`)
-
-Secure token custody:
-
-```move
-struct Escrow<phantom T> has key, store {
-    id: UID,
-    balance: Balance<T>,
-    owner: address,
-    intent_id: ID,
-}
-
-public fun deposit<T>(coin: Coin<T>, ...): Escrow<T>;
-public fun release<T>(escrow: Escrow<T>, recipient: address, ...);
-public fun refund<T>(escrow: Escrow<T>, ...);
-```
-
-#### Solver Registry (`solver_registry.move`)
-
-Solver management and staking:
-
-```move
-struct Solver has key, store {
-    id: UID,
-    owner: address,
-    stake: Balance<SUI>,
-    reputation: u64,
-    total_fills: u64,
-}
-
-public entry fun register_solver(stake: Coin<SUI>, ...);
-public entry fun increase_stake(solver: &mut Solver, ...);
-public entry fun withdraw_stake(solver: &mut Solver, ...);
-public fun slash(solver: &mut Solver, amount: u64, ...);
-```
-
-#### DeepBook Adapter (`deepbook_adapter.move`)
-
-Interface with DeepBook V3:
-
-```move
-public fun get_best_price(pool: &Pool, is_bid: bool): u64;
-public fun execute_swap<BaseAsset, QuoteAsset>(
-    pool: &mut Pool,
-    input_coin: Coin<QuoteAsset>,
-    min_output: u64,
-    ...
-): Coin<BaseAsset>;
-```
-
 ### Off-Chain Components
 
 #### Solver Bot (TypeScript)
@@ -503,16 +411,6 @@ pnpm test
 2. Create intent via frontend
 3. Run solver to fulfill
 4. Verify settlement on Sui Explorer
-
-## Roadmap
-
-- [x] Phase 0: Environment Setup
-- [ ] Phase 1: Core Intent Contracts
-- [ ] Phase 2: DeepBook Integration
-- [ ] Phase 3: Solver Infrastructure
-- [ ] Phase 4: Frontend dApp
-- [ ] Phase 5: Advanced Features
-- [ ] Phase 6: Testing and Deployment
 
 ## References
 
