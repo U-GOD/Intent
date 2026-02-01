@@ -217,5 +217,152 @@ module suiintents::intent_tests {
         
         ts::end(scenario);
     }
+    
+    // Error test: Solver cannot cancel (only creator can)
+    #[test]
+    #[expected_failure(abort_code = suiintents::intent::E_NOT_CREATOR)]
+    fun test_error_wrong_caller_cancel() {
+        let mut scenario = ts::begin(CREATOR);
+        
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 1000);
+        
+        let input_coin = coin::mint_for_testing<SUI>(100_000_000_000, ts::ctx(&mut scenario));
+        let mut registry = create_test_registry(ts::ctx(&mut scenario));
+        
+        create_intent<SUI, SUI>(
+            &mut registry,
+            input_coin,
+            95_000_000_000,
+            10000,
+            60000,
+            &clock,
+            ts::ctx(&mut scenario),
+        );
+        
+        transfer::public_share_object(registry);
+        clock::share_for_testing(clock);
+        
+        // TX2: SOLVER tries to cancel (should fail - not creator)
+        ts::next_tx(&mut scenario, SOLVER);
+        {
+            let clock = ts::take_shared<sui::clock::Clock>(&scenario);
+            let intent = ts::take_shared<Intent<SUI>>(&scenario);
+            
+            // This should abort with E_NOT_CREATOR
+            suiintents::intent::cancel_intent(
+                intent,
+                &clock,
+                ts::ctx(&mut scenario),
+            );
+            
+            ts::return_shared(clock);
+        };
+        
+        ts::end(scenario);
+    }
+    
+    // Error test: Cannot fill expired intent
+    #[test]
+    #[expected_failure(abort_code = suiintents::intent::E_INTENT_EXPIRED)]
+    fun test_error_fill_expired_intent() {
+        let mut scenario = ts::begin(CREATOR);
+        
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 1000);
+        
+        let input_coin = coin::mint_for_testing<SUI>(100_000_000_000, ts::ctx(&mut scenario));
+        let mut registry = create_test_registry(ts::ctx(&mut scenario));
+        
+        create_intent<SUI, SUI>(
+            &mut registry,
+            input_coin,
+            95_000_000_000,
+            10000,
+            60000,  // 60 second duration
+            &clock,
+            ts::ctx(&mut scenario),
+        );
+        
+        transfer::public_share_object(registry);
+        clock::share_for_testing(clock);
+        
+        // TX2: Advance time past deadline, then try to fill
+        ts::next_tx(&mut scenario, SOLVER);
+        {
+            let mut registry = ts::take_shared<IntentRegistry>(&scenario);
+            let mut clock = ts::take_shared<sui::clock::Clock>(&scenario);
+            let intent = ts::take_shared<Intent<SUI>>(&scenario);
+            
+            // Advance clock past deadline (1000 + 60000 + 1 = 61001)
+            clock::set_for_testing(&mut clock, 70000);
+            
+            let output_coin = coin::mint_for_testing<SUI>(100_000_000_000, ts::ctx(&mut scenario));
+            
+            // This should abort with E_INTENT_EXPIRED
+            fill_intent<SUI, SUI>(
+                &mut registry,
+                intent,
+                output_coin,
+                &clock,
+                ts::ctx(&mut scenario),
+            );
+            
+            ts::return_shared(registry);
+            ts::return_shared(clock);
+        };
+        
+        ts::end(scenario);
+    }
+    
+    // Error test: Output below minimum
+    #[test]
+    #[expected_failure(abort_code = suiintents::intent::E_BELOW_MIN_OUTPUT)]
+    fun test_error_below_min_output() {
+        let mut scenario = ts::begin(CREATOR);
+        
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 1000);
+        
+        let input_coin = coin::mint_for_testing<SUI>(100_000_000_000, ts::ctx(&mut scenario));
+        let mut registry = create_test_registry(ts::ctx(&mut scenario));
+        
+        create_intent<SUI, SUI>(
+            &mut registry,
+            input_coin,
+            95_000_000_000,  // min_output: 95 SUI
+            10000,
+            60000,
+            &clock,
+            ts::ctx(&mut scenario),
+        );
+        
+        transfer::public_share_object(registry);
+        clock::share_for_testing(clock);
+        
+        // TX2: Solver provides less than min_output
+        ts::next_tx(&mut scenario, SOLVER);
+        {
+            let mut registry = ts::take_shared<IntentRegistry>(&scenario);
+            let clock = ts::take_shared<sui::clock::Clock>(&scenario);
+            let intent = ts::take_shared<Intent<SUI>>(&scenario);
+            
+            // Only provide 50 SUI (below 95 SUI min)
+            let output_coin = coin::mint_for_testing<SUI>(50_000_000_000, ts::ctx(&mut scenario));
+            
+            // This should abort with E_BELOW_MIN_OUTPUT
+            fill_intent<SUI, SUI>(
+                &mut registry,
+                intent,
+                output_coin,
+                &clock,
+                ts::ctx(&mut scenario),
+            );
+            
+            ts::return_shared(registry);
+            ts::return_shared(clock);
+        };
+        
+        ts::end(scenario);
+    }
 }
-
