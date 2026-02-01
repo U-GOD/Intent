@@ -158,6 +158,7 @@ module suiintents::intent {
     }
     
     // Calculate current auction rate based on elapsed time
+    // Rate decays linearly: start_rate -> end_rate over duration
     public fun get_current_rate(auction: &DutchAuction, current_time: u64): u64 {
         if (current_time <= auction.start_time) {
             return auction.start_rate
@@ -174,6 +175,36 @@ module suiintents::intent {
         
         auction.start_rate - decrease
     }
+    
+    public fun is_auction_active(auction: &DutchAuction, current_time: u64): bool {
+        let end_time = auction.start_time + auction.duration_ms;
+        current_time < end_time
+    }
+    
+    public fun get_time_remaining(auction: &DutchAuction, current_time: u64): u64 {
+        let end_time = auction.start_time + auction.duration_ms;
+        if (current_time >= end_time) {
+            0
+        } else {
+            end_time - current_time
+        }
+    }
+    
+    public fun calculate_required_output(
+        auction: &DutchAuction, 
+        input_amount: u64, 
+        current_time: u64
+    ): u64 {
+        let rate = get_current_rate(auction, current_time);
+        // rate is in basis points (e.g., 10000 = 1:1 ratio)
+        // output = input * rate / 10000
+        (input_amount * rate) / 10000
+    }
+    
+    public fun get_start_rate(auction: &DutchAuction): u64 { auction.start_rate }
+    public fun get_end_rate(auction: &DutchAuction): u64 { auction.end_rate }
+    public fun get_start_time(auction: &DutchAuction): u64 { auction.start_time }
+    public fun get_duration(auction: &DutchAuction): u64 { auction.duration_ms }
     
     public fun is_expired<T>(intent: &Intent<T>, clock: &Clock): bool {
         clock::timestamp_ms(clock) > intent.deadline
