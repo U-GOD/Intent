@@ -11,8 +11,10 @@ module suiintents::intent_tests {
         create_intent,
         fill_intent,
         create_test_auction,
+    };
+    use suiintents::dutch_auction::{
         get_current_rate,
-        is_auction_active,
+        is_active as is_auction_active,
         get_time_remaining,
     };
     use sui::test_scenario::{Self as ts};

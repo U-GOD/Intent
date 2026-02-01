@@ -1,5 +1,5 @@
-// SuiIntents: Intent-Based Trading Protocol
-// This module defines the core data structures for the intent system.
+// Intent Registry module for SuiIntents
+// Core module managing intent lifecycle
 
 #[allow(unused_const, unused_field)]
 module suiintents::intent {
@@ -8,6 +8,7 @@ module suiintents::intent {
     use sui::coin::{Self, Coin};
     use sui::event;
     use std::type_name::{Self, TypeName};
+    use suiintents::dutch_auction::{Self, DutchAuction};
     
     // Error codes
     const E_INTENT_ALREADY_FILLED: u64 = 1;
@@ -35,24 +36,6 @@ module suiintents::intent {
         deadline: u64,
         status: u8,
         auction: DutchAuction,
-    }
-    
-    // Dutch Auction for price discovery
-    public struct DutchAuction has store, drop {
-        start_rate: u64,
-        end_rate: u64,
-        start_time: u64,
-        duration_ms: u64,
-    }
-    
-    // Solver struct for registered solvers
-    public struct Solver has key, store {
-        id: UID,
-        owner: address,
-        stake: Balance<sui::sui::SUI>,
-        reputation: u64,
-        total_fills: u64,
-        is_active: bool,
     }
     
     // Registry to track all intents
@@ -101,6 +84,7 @@ module suiintents::intent {
         transfer::share_object(registry);
     }
     
+    // Create a new intent
     public entry fun create_intent<T, U>(
         registry: &mut IntentRegistry,
         input_coin: Coin<T>,
@@ -111,19 +95,17 @@ module suiintents::intent {
         ctx: &mut TxContext,
     ) {
         let input_amount = coin::value(&input_coin);
-        
         let input_balance = coin::into_balance(input_coin);
-        
         let current_time = clock::timestamp_ms(clock);
-        
         let deadline = current_time + duration_ms;
         
-        let auction = DutchAuction {
+        // Create Dutch Auction using the module
+        let auction = dutch_auction::new(
             start_rate,
-            end_rate: min_output,
-            start_time: current_time,
+            min_output, // end_rate
+            current_time,
             duration_ms,
-        };
+        );
         
         let creator = tx_context::sender(ctx);
         
@@ -140,7 +122,6 @@ module suiintents::intent {
         };
         
         let intent_id = object::id(&intent);
-        
         registry.total_intents = registry.total_intents + 1;
         
         event::emit(IntentCreated {
@@ -158,8 +139,6 @@ module suiintents::intent {
     }
     
     // Solver fills an intent by providing the output tokens
-    // T = input token type (what solver receives)
-    // U = output token type (what user receives)
     public entry fun fill_intent<T, U>(
         registry: &mut IntentRegistry,
         intent: Intent<T>,
@@ -173,7 +152,7 @@ module suiintents::intent {
         assert!(intent.status == STATUS_PENDING, E_NOT_PENDING);
         assert!(current_time <= intent.deadline, E_INTENT_EXPIRED);
         
-        let required_output = calculate_required_output(
+        let _required_output = dutch_auction::calculate_required_output(
             &intent.auction, 
             intent.input_amount, 
             current_time
@@ -182,7 +161,7 @@ module suiintents::intent {
         let output_amount = coin::value(&output_coin);
         assert!(output_amount >= intent.min_output, E_BELOW_MIN_OUTPUT);
         
-        let fill_rate = get_current_rate(&intent.auction, current_time);
+        let fill_rate = dutch_auction::get_current_rate(&intent.auction, current_time);
         
         let Intent {
             id,
@@ -202,7 +181,6 @@ module suiintents::intent {
         
         let input_coin = coin::from_balance(input_balance, ctx);
         transfer::public_transfer(input_coin, solver);
-        
         transfer::public_transfer(output_coin, creator);
         
         registry.filled_intents = registry.filled_intents + 1;
@@ -215,55 +193,57 @@ module suiintents::intent {
         });
     }
     
-    // Calculate current auction rate based on elapsed time
-    // Rate decays linearly: start_rate -> end_rate over duration
-    public fun get_current_rate(auction: &DutchAuction, current_time: u64): u64 {
-        if (current_time <= auction.start_time) {
-            return auction.start_rate
-        };
+    // Cancel an intent and refund tokens to creator
+    public entry fun cancel_intent<T>(
+        intent: Intent<T>,
+        _clock: &Clock,
+        ctx: &mut TxContext,
+    ) {
+        assert!(intent.creator == tx_context::sender(ctx), E_NOT_CREATOR);
+        assert!(intent.status == STATUS_PENDING, E_NOT_PENDING);
         
-        let elapsed = current_time - auction.start_time;
+        let Intent {
+            id,
+            creator,
+            input_balance,
+            input_amount: _,
+            output_type: _,
+            min_output: _,
+            deadline: _,
+            status: _,
+            auction: _,
+        } = intent;
         
-        if (elapsed >= auction.duration_ms) {
-            return auction.end_rate
-        };
+        let intent_id = object::uid_to_inner(&id);
+        object::delete(id);
         
-        let rate_diff = auction.start_rate - auction.end_rate;
-        let decrease = (rate_diff * elapsed) / auction.duration_ms;
+        let refund_coin = coin::from_balance(input_balance, ctx);
+        transfer::public_transfer(refund_coin, creator);
         
-        auction.start_rate - decrease
+        event::emit(IntentCancelled { intent_id });
     }
     
-    public fun is_auction_active(auction: &DutchAuction, current_time: u64): bool {
-        let end_time = auction.start_time + auction.duration_ms;
-        current_time < end_time
+    // Release escrow (package internal)
+    public(package) fun release_escrow<T>(intent: Intent<T>): (ID, address, Balance<T>, u64) {
+        let Intent {
+            id,
+            creator,
+            input_balance,
+            input_amount,
+            output_type: _,
+            min_output: _,
+            deadline: _,
+            status: _,
+            auction: _,
+        } = intent;
+        
+        let intent_id = object::uid_to_inner(&id);
+        object::delete(id);
+        
+        (intent_id, creator, input_balance, input_amount)
     }
     
-    public fun get_time_remaining(auction: &DutchAuction, current_time: u64): u64 {
-        let end_time = auction.start_time + auction.duration_ms;
-        if (current_time >= end_time) {
-            0
-        } else {
-            end_time - current_time
-        }
-    }
-    
-    public fun calculate_required_output(
-        auction: &DutchAuction, 
-        input_amount: u64, 
-        current_time: u64
-    ): u64 {
-        let rate = get_current_rate(auction, current_time);
-        // rate is in basis points (e.g., 10000 = 1:1 ratio)
-        // output = input * rate / 10000
-        (input_amount * rate) / 10000
-    }
-    
-    public fun get_start_rate(auction: &DutchAuction): u64 { auction.start_rate }
-    public fun get_end_rate(auction: &DutchAuction): u64 { auction.end_rate }
-    public fun get_start_time(auction: &DutchAuction): u64 { auction.start_time }
-    public fun get_duration(auction: &DutchAuction): u64 { auction.duration_ms }
-    
+    // Intent getters
     public fun is_expired<T>(intent: &Intent<T>, clock: &Clock): bool {
         clock::timestamp_ms(clock) > intent.deadline
     }
@@ -288,55 +268,7 @@ module suiintents::intent {
         &intent.auction
     }
     
-    public entry fun cancel_intent<T>(
-        intent: Intent<T>,
-        clock: &Clock,
-        ctx: &mut TxContext,
-    ) {
-        assert!(intent.creator == tx_context::sender(ctx), E_NOT_CREATOR);
-        assert!(intent.status == STATUS_PENDING, E_NOT_PENDING);
-        
-        let Intent {
-            id,
-            creator,
-            input_balance,
-            input_amount: _,
-            output_type: _,
-            min_output: _,
-            deadline: _,
-            status: _,
-            auction: _,
-        } = intent;
-        
-        let intent_id = object::uid_to_inner(&id);
-        
-        object::delete(id);
-        
-        let refund_coin = coin::from_balance(input_balance, ctx);
-        transfer::public_transfer(refund_coin, creator);
-        
-        event::emit(IntentCancelled { intent_id });
-    }
-    
-    public(package) fun release_escrow<T>(intent: Intent<T>): (ID, address, Balance<T>, u64) {
-        let Intent {
-            id,
-            creator,
-            input_balance,
-            input_amount,
-            output_type: _,
-            min_output: _,
-            deadline: _,
-            status: _,
-            auction: _,
-        } = intent;
-        
-        let intent_id = object::uid_to_inner(&id);
-        object::delete(id);
-        
-        (intent_id, creator, input_balance, input_amount)
-    }
-    
+    // Registry getters
     public fun get_total_intents(registry: &IntentRegistry): u64 {
         registry.total_intents
     }
@@ -372,13 +304,6 @@ module suiintents::intent {
         start_time: u64,
         duration_ms: u64,
     ): DutchAuction {
-        DutchAuction {
-            start_rate,
-            end_rate,
-            start_time,
-            duration_ms,
-        }
+        dutch_auction::create_for_testing(start_rate, end_rate, start_time, duration_ms)
     }
 }
-
-
