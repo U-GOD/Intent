@@ -157,6 +157,64 @@ module suiintents::intent {
         transfer::share_object(intent);
     }
     
+    // Solver fills an intent by providing the output tokens
+    // T = input token type (what solver receives)
+    // U = output token type (what user receives)
+    public entry fun fill_intent<T, U>(
+        registry: &mut IntentRegistry,
+        intent: Intent<T>,
+        output_coin: Coin<U>,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ) {
+        let current_time = clock::timestamp_ms(clock);
+        let solver = tx_context::sender(ctx);
+        
+        assert!(intent.status == STATUS_PENDING, E_NOT_PENDING);
+        assert!(current_time <= intent.deadline, E_INTENT_EXPIRED);
+        
+        let required_output = calculate_required_output(
+            &intent.auction, 
+            intent.input_amount, 
+            current_time
+        );
+        
+        let output_amount = coin::value(&output_coin);
+        assert!(output_amount >= intent.min_output, E_BELOW_MIN_OUTPUT);
+        
+        let fill_rate = get_current_rate(&intent.auction, current_time);
+        
+        let Intent {
+            id,
+            creator,
+            input_balance,
+            input_amount: _,
+            output_type: _,
+            min_output: _,
+            deadline: _,
+            status: _,
+            auction: _,
+        } = intent;
+        
+        let intent_id = object::uid_to_inner(&id);
+        
+        object::delete(id);
+        
+        let input_coin = coin::from_balance(input_balance, ctx);
+        transfer::public_transfer(input_coin, solver);
+        
+        transfer::public_transfer(output_coin, creator);
+        
+        registry.filled_intents = registry.filled_intents + 1;
+        
+        event::emit(IntentFilled {
+            intent_id,
+            solver,
+            output_amount,
+            fill_rate,
+        });
+    }
+    
     // Calculate current auction rate based on elapsed time
     // Rate decays linearly: start_rate -> end_rate over duration
     public fun get_current_rate(auction: &DutchAuction, current_time: u64): u64 {
