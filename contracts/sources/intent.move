@@ -337,6 +337,18 @@ module suiintents::intent {
         (intent_id, creator, input_balance, input_amount)
     }
     
+    public fun get_total_intents(registry: &IntentRegistry): u64 {
+        registry.total_intents
+    }
+    
+    public fun get_filled_intents(registry: &IntentRegistry): u64 {
+        registry.filled_intents
+    }
+    
+    public fun get_min_solver_stake(registry: &IntentRegistry): u64 {
+        registry.min_solver_stake
+    }
+    
     #[test_only]
     public fun create_test_registry(ctx: &mut TxContext): IntentRegistry {
         IntentRegistry {
@@ -346,4 +358,11 @@ module suiintents::intent {
             min_solver_stake: 100_000_000_000,
         }
     }
+    
+    #[test_only]
+    public fun destroy_test_registry(registry: IntentRegistry) {
+        let IntentRegistry { id, total_intents: _, filled_intents: _, min_solver_stake: _ } = registry;
+        object::delete(id);
+    }
 }
+
