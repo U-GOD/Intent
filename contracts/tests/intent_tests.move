@@ -1,12 +1,15 @@
 #[test_only]
 module suiintents::intent_tests {
     use suiintents::intent::{
+        Intent,
+        IntentRegistry,
         create_test_registry,
         destroy_test_registry,
         get_total_intents,
         get_filled_intents,
         get_min_solver_stake,
         create_intent,
+        fill_intent,
         create_test_auction,
         get_current_rate,
         is_auction_active,
@@ -14,7 +17,7 @@ module suiintents::intent_tests {
     };
     use sui::test_scenario::{Self as ts};
     use sui::clock::{Self};
-    use sui::coin::{Self};
+    use sui::coin::{Self, Coin};
     use sui::sui::SUI;
     
     const CREATOR: address = @0xCAFE;
@@ -67,12 +70,8 @@ module suiintents::intent_tests {
     
     #[test]
     fun test_auction_rate_decay() {
-        let mut scenario = ts::begin(CREATOR);
+        let scenario = ts::begin(CREATOR);
         
-        // Create auction: rate decays from 10000 to 5000 over 100 seconds
-        // start_rate = 10000 (100% of 1:1)
-        // end_rate = 5000 (50% of 1:1)
-        // duration = 100000 ms (100 seconds)
         let auction = create_test_auction(
             10000,   
             5000,     
@@ -81,11 +80,8 @@ module suiintents::intent_tests {
         );
         
         assert!(get_current_rate(&auction, 0) == 10000, 0);
-        
         assert!(get_current_rate(&auction, 50000) == 7500, 1);
-        
         assert!(get_current_rate(&auction, 100000) == 5000, 2);
-        
         assert!(get_current_rate(&auction, 150000) == 5000, 3);
         
         assert!(is_auction_active(&auction, 0) == true, 4);
@@ -95,6 +91,75 @@ module suiintents::intent_tests {
         assert!(get_time_remaining(&auction, 0) == 100000, 7);
         assert!(get_time_remaining(&auction, 50000) == 50000, 8);
         assert!(get_time_remaining(&auction, 100000) == 0, 9);
+        
+        ts::end(scenario);
+    }
+    
+    #[test]
+    fun test_fill_intent() {
+        let mut scenario = ts::begin(CREATOR);
+        
+        // TX1: Creator creates intent
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 1000);
+        
+        let input_coin = coin::mint_for_testing<SUI>(100_000_000_000, ts::ctx(&mut scenario));
+        
+        let mut registry = create_test_registry(ts::ctx(&mut scenario));
+        
+        create_intent<SUI, SUI>(
+            &mut registry,
+            input_coin,
+            95_000_000_000,
+            10000,
+            60000,
+            &clock,
+            ts::ctx(&mut scenario),
+        );
+        
+        // Share registry for next tx (IntentRegistry now has store)
+        transfer::public_share_object(registry);
+        clock::share_for_testing(clock);
+        
+        // TX2: Solver fills the intent
+        ts::next_tx(&mut scenario, SOLVER);
+        {
+            let mut registry = ts::take_shared<IntentRegistry>(&scenario);
+            let clock = ts::take_shared<sui::clock::Clock>(&scenario);
+            let intent = ts::take_shared<Intent<SUI>>(&scenario);
+            
+            let output_coin = coin::mint_for_testing<SUI>(100_000_000_000, ts::ctx(&mut scenario));
+            
+            fill_intent<SUI, SUI>(
+                &mut registry,
+                intent,
+                output_coin,
+                &clock,
+                ts::ctx(&mut scenario),
+            );
+            
+            assert!(get_total_intents(&registry) == 1, 0);
+            assert!(get_filled_intents(&registry) == 1, 1);
+            
+            ts::return_shared(registry);
+            ts::return_shared(clock);
+        };
+        
+        // TX3: Verify solver received input tokens
+        ts::next_tx(&mut scenario, SOLVER);
+        {
+            let received_coin = ts::take_from_address<Coin<SUI>>(&scenario, SOLVER);
+            assert!(coin::value(&received_coin) == 100_000_000_000, 2);
+            ts::return_to_address(SOLVER, received_coin);
+        };
+        
+        // TX4: Verify creator received output tokens
+        ts::next_tx(&mut scenario, CREATOR);
+        {
+            let received_coin = ts::take_from_address<Coin<SUI>>(&scenario, CREATOR);
+            assert!(coin::value(&received_coin) == 100_000_000_000, 3);
+            ts::return_to_address(CREATOR, received_coin);
+        };
         
         ts::end(scenario);
     }

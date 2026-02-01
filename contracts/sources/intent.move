@@ -56,7 +56,7 @@ module suiintents::intent {
     }
     
     // Registry to track all intents
-    public struct IntentRegistry has key {
+    public struct IntentRegistry has key, store {
         id: UID,
         total_intents: u64,
         filled_intents: u64,
