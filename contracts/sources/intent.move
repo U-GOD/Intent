@@ -195,6 +195,59 @@ module suiintents::intent {
         intent.input_amount
     }
     
+    public fun get_auction<T>(intent: &Intent<T>): &DutchAuction {
+        &intent.auction
+    }
+    
+    public entry fun cancel_intent<T>(
+        intent: Intent<T>,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ) {
+        assert!(intent.creator == tx_context::sender(ctx), E_NOT_CREATOR);
+        assert!(intent.status == STATUS_PENDING, E_NOT_PENDING);
+        
+        let Intent {
+            id,
+            creator,
+            input_balance,
+            input_amount: _,
+            output_type: _,
+            min_output: _,
+            deadline: _,
+            status: _,
+            auction: _,
+        } = intent;
+        
+        let intent_id = object::uid_to_inner(&id);
+        
+        object::delete(id);
+        
+        let refund_coin = coin::from_balance(input_balance, ctx);
+        transfer::public_transfer(refund_coin, creator);
+        
+        event::emit(IntentCancelled { intent_id });
+    }
+    
+    public(package) fun release_escrow<T>(intent: Intent<T>): (ID, address, Balance<T>, u64) {
+        let Intent {
+            id,
+            creator,
+            input_balance,
+            input_amount,
+            output_type: _,
+            min_output: _,
+            deadline: _,
+            status: _,
+            auction: _,
+        } = intent;
+        
+        let intent_id = object::uid_to_inner(&id);
+        object::delete(id);
+        
+        (intent_id, creator, input_balance, input_amount)
+    }
+    
     #[test_only]
     public fun create_test_registry(ctx: &mut TxContext): IntentRegistry {
         IntentRegistry {
