@@ -163,4 +163,59 @@ module suiintents::intent_tests {
         
         ts::end(scenario);
     }
+    
+    #[test]
+    fun test_cancel_intent() {
+        let mut scenario = ts::begin(CREATOR);
+        
+        let mut clock = clock::create_for_testing(ts::ctx(&mut scenario));
+        clock::set_for_testing(&mut clock, 1000);
+        
+        let input_coin = coin::mint_for_testing<SUI>(100_000_000_000, ts::ctx(&mut scenario));
+        
+        let mut registry = create_test_registry(ts::ctx(&mut scenario));
+        
+        create_intent<SUI, SUI>(
+            &mut registry,
+            input_coin,
+            95_000_000_000,
+            10000,
+            60000,
+            &clock,
+            ts::ctx(&mut scenario),
+        );
+        
+        assert!(get_total_intents(&registry) == 1, 0);
+        
+        transfer::public_share_object(registry);
+        clock::share_for_testing(clock);
+        
+        // TX2: Creator cancels the intent
+        ts::next_tx(&mut scenario, CREATOR);
+        {
+            let registry = ts::take_shared<IntentRegistry>(&scenario);
+            let clock = ts::take_shared<sui::clock::Clock>(&scenario);
+            let intent = ts::take_shared<Intent<SUI>>(&scenario);
+            
+            suiintents::intent::cancel_intent(
+                intent,
+                &clock,
+                ts::ctx(&mut scenario),
+            );
+            
+            ts::return_shared(registry);
+            ts::return_shared(clock);
+        };
+        
+        // TX3: Verify creator got refund
+        ts::next_tx(&mut scenario, CREATOR);
+        {
+            let refunded_coin = ts::take_from_address<Coin<SUI>>(&scenario, CREATOR);
+            assert!(coin::value(&refunded_coin) == 100_000_000_000, 1);
+            ts::return_to_address(CREATOR, refunded_coin);
+        };
+        
+        ts::end(scenario);
+    }
 }
+
