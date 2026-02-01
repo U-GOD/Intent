@@ -1,0 +1,14 @@
+# Build artifacts
+build/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sui
+.sui/
