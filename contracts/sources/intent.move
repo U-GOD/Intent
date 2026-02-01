@@ -5,7 +5,9 @@
 module suiintents::intent {
     use sui::clock::{Self, Clock};
     use sui::balance::Balance;
-    use std::type_name::TypeName;
+    use sui::coin::{Self, Coin};
+    use sui::event;
+    use std::type_name::{Self, TypeName};
     
     // Error codes
     const E_INTENT_ALREADY_FILLED: u64 = 1;
@@ -97,6 +99,62 @@ module suiintents::intent {
             min_solver_stake: 100_000_000_000,
         };
         transfer::share_object(registry);
+    }
+    
+    public entry fun create_intent<T, U>(
+        registry: &mut IntentRegistry,
+        input_coin: Coin<T>,
+        min_output: u64,
+        start_rate: u64,
+        duration_ms: u64,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ) {
+        let input_amount = coin::value(&input_coin);
+        
+        let input_balance = coin::into_balance(input_coin);
+        
+        let current_time = clock::timestamp_ms(clock);
+        
+        let deadline = current_time + duration_ms;
+        
+        let auction = DutchAuction {
+            start_rate,
+            end_rate: min_output,
+            start_time: current_time,
+            duration_ms,
+        };
+        
+        let creator = tx_context::sender(ctx);
+        
+        let intent = Intent<T> {
+            id: object::new(ctx),
+            creator,
+            input_balance,
+            input_amount,
+            output_type: type_name::get<U>(),
+            min_output,
+            deadline,
+            status: STATUS_PENDING,
+            auction,
+        };
+        
+        let intent_id = object::id(&intent);
+        
+        registry.total_intents = registry.total_intents + 1;
+        
+        event::emit(IntentCreated {
+            intent_id,
+            creator,
+            input_type: type_name::get<T>(),
+            input_amount,
+            output_type: type_name::get<U>(),
+            min_output,
+            start_rate,
+            deadline,
+        });
+        
+        transfer::share_object(intent);
     }
     
     // Calculate current auction rate based on elapsed time
