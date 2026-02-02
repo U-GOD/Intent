@@ -3,7 +3,7 @@ name = "suiintents"
 edition = "2024.beta"
 
 [dependencies]
-# Sui and DeepBook are auto-injected for testnet environment
+# Sui, DeepBook, etc. are auto-injected for testnet environment
 
 [addresses]
 suiintents = "0x0"
