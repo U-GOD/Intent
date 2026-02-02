@@ -12,8 +12,8 @@ const RPC_URL = getFullnodeUrl(NETWORK);
 const suiClient = new SuiClient({ url: RPC_URL });
 
 // Contract addresses (update after deployment)
-const SUIINTENTS_PACKAGE = '0x...'; // Your deployed package
-const INTENT_REGISTRY = '0x...'; // Your registry object
+const SUIINTENTS_PACKAGE = '0x...'; //  deployed package
+const INTENT_REGISTRY = '0x...'; //     registry object
 
 // DeepBook V3 addresses
 const DEEPBOOK_PACKAGE = '0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357f2b0ca48078ed7';
