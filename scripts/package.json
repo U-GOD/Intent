@@ -1,0 +1,18 @@
+{
+  "name": "suiintents-scripts",
+  "version": "1.0.0",
+  "description": "DeepBook integration scripts for SuiIntents",
+  "type": "module",
+  "scripts": {
+    "swap": "npx tsx deepbook-swap.ts",
+    "query": "npx tsx query-pool.ts"
+  },
+  "dependencies": {
+    "@mysten/sui.js": "^0.54.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "tsx": "^4.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
