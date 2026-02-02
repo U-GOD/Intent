@@ -1,8 +1,5 @@
 /**
  * DeepBook V3 Pool Query Script
- * 
- * Connects to Sui testnet and verifies RPC connectivity.
- * This is the foundation for querying DeepBook pool data.
  */
 
 import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client';
