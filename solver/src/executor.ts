@@ -1,5 +1,5 @@
 /**
- * Executor Module - Build and submit fill PTBs
+ * Executor Module - Build and submit atomic fill PTBs
  */
 
 import { SuiClient } from '@mysten/sui.js/client';
@@ -53,9 +53,9 @@ export class Executor {
         }
         
         try {
-            const tx = await this.buildFillPTB(intent, poolId, minOutput);
+            const tx = await this.buildAtomicFillPTB(intent, poolId, minOutput);
             
-            console.log('[Executor] Submitting fill transaction...');
+            console.log('[Executor] Submitting atomic fill transaction...');
             
             const result = await this.client.signAndExecuteTransactionBlock({
                 signer: this.keypair,
@@ -83,7 +83,16 @@ export class Executor {
         }
     }
     
-    private async buildFillPTB(
+    /**
+     * Builds the complete atomic PTB for filling an intent
+     * 
+     * Flow:
+     * 1. Prepare solver's coins (merge if needed)
+     * 2. Swap on DeepBook to get output tokens
+     * 3. Call fill_intent with the swapped output tokens
+     * 4. Everything is atomic - reverts together if any step fails
+     */
+    private async buildAtomicFillPTB(
         intent: IntentCreatedEvent,
         poolId: string,
         minOutput: bigint
@@ -91,37 +100,67 @@ export class Executor {
         const tx = new TransactionBlock();
         const address = this.keypair!.getPublicKey().toSuiAddress();
         
-        const coins = await this.client.getCoins({
-            owner: address,
-            coinType: config.coins.SUI,
+        // Step 1: Get solver's coins to use for the swap
+        const solverCoins = await this.getSolverCoins(intent.inputType);
+        
+        if (solverCoins.length === 0) {
+            throw new Error(`No ${intent.inputType} coins available`);
+        }
+        
+        // Merge all coins of this type if multiple
+        let primaryCoin = tx.object(solverCoins[0]);
+        if (solverCoins.length > 1) {
+            tx.mergeCoins(primaryCoin, solverCoins.slice(1).map(id => tx.object(id)));
+        }
+        
+        // Step 2: Split the amount needed for swap
+        const [swapInputCoin] = tx.splitCoins(primaryCoin, [tx.pure(intent.inputAmount)]);
+        
+        // Step 3: Swap on DeepBook to get output tokens
+        // This calls DeepBook's swap function atomically
+        const [outputCoin, unusedInput] = tx.moveCall({
+            target: `${config.deepbook.package}::pool::swap_exact_base_for_quote`,
+            arguments: [
+                tx.object(poolId),
+                swapInputCoin,
+                tx.pure(minOutput),
+                tx.object('0x6'), // Clock
+            ],
+            typeArguments: [intent.inputType, intent.outputType],
         });
         
-        if (coins.data.length === 0) {
-            throw new Error('No coins available');
-        }
-        
-        if (coins.data.length > 1) {
-            const coinIds = coins.data.map(c => c.coinObjectId);
-            tx.mergeCoins(tx.object(coinIds[0]), coinIds.slice(1).map(id => tx.object(id)));
-        }
-        
-        const [swapCoin] = tx.splitCoins(
-            tx.object(coins.data[0].coinObjectId),
-            [tx.pure(intent.inputAmount)]
-        );
-        
+        // Step 4: Fill the intent with the swapped output tokens
+        // This gives the output to the user and gives escrowed input to solver
         tx.moveCall({
             target: `${config.packageId}::intent::fill_intent`,
             arguments: [
                 tx.object(config.registryId),
                 tx.object(intent.intentId),
-                swapCoin,
-                tx.object('0x6'),
+                outputCoin,
+                tx.object('0x6'), // Clock
             ],
             typeArguments: [intent.inputType, intent.outputType],
         });
         
+        // Step 5: Return any unused input back to solver
+        tx.transferObjects([unusedInput], tx.pure(address));
+        
         return tx;
+    }
+    
+    /**
+     * Get all coins of a specific type owned by the solver
+     */
+    private async getSolverCoins(coinType: string): Promise<string[]> {
+        if (!this.keypair) return [];
+        
+        const address = this.keypair.getPublicKey().toSuiAddress();
+        const coins = await this.client.getCoins({
+            owner: address,
+            coinType,
+        });
+        
+        return coins.data.map(c => c.coinObjectId);
     }
     
     async getBalance(): Promise<bigint> {
