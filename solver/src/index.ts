@@ -6,11 +6,13 @@ import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client';
 import { config } from './config.js';
 import { EventListener, IntentCreatedEvent } from './events.js';
 import { PriceEngine } from './price.js';
+import { Executor } from './executor.js';
 
 class Solver {
     private client: SuiClient;
     private eventListener: EventListener;
     private priceEngine: PriceEngine;
+    private executor: Executor;
     private running: boolean = false;
     private pendingIntents: Map<string, IntentCreatedEvent> = new Map();
     
@@ -19,6 +21,7 @@ class Solver {
         this.client = new SuiClient({ url: rpcUrl });
         this.eventListener = new EventListener(this.client, config.packageId);
         this.priceEngine = new PriceEngine(this.client);
+        this.executor = new Executor(this.client);
         
         this.eventListener.onIntentCreated(this.handleNewIntent.bind(this));
     }
@@ -37,12 +40,19 @@ class Solver {
             process.exit(1);
         }
         
+        if (this.executor.isReady()) {
+            const balance = await this.executor.getBalance();
+            console.log('[OK] Wallet:', this.executor.getAddress());
+            console.log('[OK] Balance:', Number(balance) / 1e9, 'SUI');
+        } else {
+            console.log('[WARN] No wallet - dry run mode');
+        }
+        
         const pools = await this.priceEngine.getPools();
-        console.log('[OK] DeepBook pools available:', pools.length);
+        console.log('[OK] DeepBook pools:', pools.length);
         
         this.running = true;
         console.log('[OK] Solver started');
-        console.log('[OK] Listening for IntentCreated events...');
         
         await this.eventListener.startPolling(config.solver.pollIntervalMs);
     }
@@ -54,32 +64,26 @@ class Solver {
     }
     
     private async handleNewIntent(event: IntentCreatedEvent): Promise<void> {
-        console.log('[INTENT] New intent detected:');
-        console.log('  ID:', event.intentId);
-        console.log('  Creator:', event.creator);
+        console.log('[INTENT] New intent:', event.intentId);
         console.log('  Input:', event.inputAmount.toString(), event.inputType);
         console.log('  Min Output:', event.minOutput.toString(), event.outputType);
         
         this.pendingIntents.set(event.intentId, event);
-        
-        await this.evaluateIntent(event);
+        await this.evaluateAndFill(event);
     }
     
-    private async evaluateIntent(event: IntentCreatedEvent): Promise<void> {
+    private async evaluateAndFill(event: IntentCreatedEvent): Promise<void> {
         const poolId = this.findPoolForPair(event.inputType, event.outputType);
         if (!poolId) {
-            console.log('[SKIP] No pool found for pair');
+            console.log('[SKIP] No pool for pair');
             return;
         }
         
         const quote = await this.priceEngine.getQuote(poolId, event.inputAmount, true);
         if (!quote) {
-            console.log('[SKIP] Could not get quote');
+            console.log('[SKIP] No quote available');
             return;
         }
-        
-        console.log('[QUOTE] Expected output:', quote.outputAmount.toString());
-        console.log('[QUOTE] Price impact:', quote.priceImpactBps, 'bps');
         
         const profitable = this.priceEngine.isProfitable(
             event.inputAmount,
@@ -88,10 +92,25 @@ class Solver {
             config.solver.minProfitBps
         );
         
-        if (profitable) {
-            console.log('[OK] Intent is profitable - ready to fill');
+        if (!profitable) {
+            console.log('[SKIP] Not profitable');
+            return;
+        }
+        
+        console.log('[OK] Profitable intent - filling...');
+        
+        if (!this.executor.isReady()) {
+            console.log('[SKIP] No wallet configured');
+            return;
+        }
+        
+        const result = await this.executor.fillIntent(event, poolId, event.minOutput);
+        
+        if (result.success) {
+            console.log('[OK] Intent filled:', result.digest);
+            this.pendingIntents.delete(event.intentId);
         } else {
-            console.log('[SKIP] Intent not profitable enough');
+            console.log('[ERROR] Fill failed:', result.error);
         }
     }
     
