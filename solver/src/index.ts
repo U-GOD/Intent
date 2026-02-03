@@ -5,10 +5,12 @@
 import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client';
 import { config } from './config.js';
 import { EventListener, IntentCreatedEvent } from './events.js';
+import { PriceEngine } from './price.js';
 
 class Solver {
     private client: SuiClient;
     private eventListener: EventListener;
+    private priceEngine: PriceEngine;
     private running: boolean = false;
     private pendingIntents: Map<string, IntentCreatedEvent> = new Map();
     
@@ -16,6 +18,7 @@ class Solver {
         const rpcUrl = getFullnodeUrl(config.network);
         this.client = new SuiClient({ url: rpcUrl });
         this.eventListener = new EventListener(this.client, config.packageId);
+        this.priceEngine = new PriceEngine(this.client);
         
         this.eventListener.onIntentCreated(this.handleNewIntent.bind(this));
     }
@@ -33,6 +36,9 @@ class Solver {
             console.error('[ERROR] Failed to connect:', error);
             process.exit(1);
         }
+        
+        const pools = await this.priceEngine.getPools();
+        console.log('[OK] DeepBook pools available:', pools.length);
         
         this.running = true;
         console.log('[OK] Solver started');
@@ -53,9 +59,50 @@ class Solver {
         console.log('  Creator:', event.creator);
         console.log('  Input:', event.inputAmount.toString(), event.inputType);
         console.log('  Min Output:', event.minOutput.toString(), event.outputType);
-        console.log('  Deadline:', new Date(Number(event.deadline)).toISOString());
         
         this.pendingIntents.set(event.intentId, event);
+        
+        await this.evaluateIntent(event);
+    }
+    
+    private async evaluateIntent(event: IntentCreatedEvent): Promise<void> {
+        const poolId = this.findPoolForPair(event.inputType, event.outputType);
+        if (!poolId) {
+            console.log('[SKIP] No pool found for pair');
+            return;
+        }
+        
+        const quote = await this.priceEngine.getQuote(poolId, event.inputAmount, true);
+        if (!quote) {
+            console.log('[SKIP] Could not get quote');
+            return;
+        }
+        
+        console.log('[QUOTE] Expected output:', quote.outputAmount.toString());
+        console.log('[QUOTE] Price impact:', quote.priceImpactBps, 'bps');
+        
+        const profitable = this.priceEngine.isProfitable(
+            event.inputAmount,
+            quote.outputAmount,
+            event.startRate,
+            config.solver.minProfitBps
+        );
+        
+        if (profitable) {
+            console.log('[OK] Intent is profitable - ready to fill');
+        } else {
+            console.log('[SKIP] Intent not profitable enough');
+        }
+    }
+    
+    private findPoolForPair(inputType: string, outputType: string): string | null {
+        if (inputType.includes('SUI') && outputType.includes('USDC')) {
+            return config.deepbook.pools.SUI_DBUSDC;
+        }
+        if (inputType.includes('DEEP') && outputType.includes('SUI')) {
+            return config.deepbook.pools.DEEP_SUI;
+        }
+        return null;
     }
 }
 
