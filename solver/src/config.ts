@@ -5,13 +5,13 @@
 export const config = {
     network: (process.env.SUI_NETWORK as 'mainnet' | 'testnet' | 'devnet') || 'testnet',
     
-    // Contract addresses (update after deployment)
-    packageId: process.env.PACKAGE_ID || '0x...',
-    registryId: process.env.REGISTRY_ID || '0x...',
+    // Deployed contract addresses (testnet)
+    packageId: '0x0f794d721f36b929ccdc62b4d5e556505064938a95f554c4fd1b86f20e5b3233',
+    registryId: '0x7f6c8a5af6cd8109b20eb8605398f9094f6749498413b65f8229ae062e5ca469',
     
-    // DeepBook V3 addresses (testnet)
+    // DeepBook V3 addresses (testnet) - Official from Mysten Labs docs
     deepbook: {
-        package: '0x2c8d603bc51326b8c13cef9dd07031a408a48dddb541963357f2b0ca48078ed7',
+        package: '0xbc331f09e5c737d45f074ad2d17c3038421b3b9018699e370d88d94938c53d28',
         pools: {
             SUI_DBUSDC: '0x1c19362ca52b8ffd7a33cee805a67d40f31e6ba303753fd3a4cfdfacea7163a5',
             DEEP_SUI: '0x48c95963e9eac37a316b7ae04a0deb761bcdcc2b67912374d6036e7f0e9bae9f',

@@ -94,24 +94,36 @@ export class Executor {
         const tx = new TransactionBlock();
         const address = this.keypair!.getPublicKey().toSuiAddress();
         
-        const solverCoins = await this.getSolverCoins(intent.inputType);
-        
-        if (solverCoins.length === 0) {
-            throw new Error(`No ${intent.inputType} coins available`);
+        // For SUI, use tx.gas to avoid conflicts with gas payment
+        let swapInputCoin;
+        if (intent.inputType === '0x2::sui::SUI' || intent.inputType.includes('::sui::SUI')) {
+            [swapInputCoin] = tx.splitCoins(tx.gas, [tx.pure(intent.inputAmount)]);
+        } else {
+            const solverCoins = await this.getSolverCoins(intent.inputType);
+            if (solverCoins.length === 0) {
+                throw new Error(`No ${intent.inputType} coins available`);
+            }
+            let primaryCoin = tx.object(solverCoins[0]);
+            if (solverCoins.length > 1) {
+                tx.mergeCoins(primaryCoin, solverCoins.slice(1).map(id => tx.object(id)));
+            }
+            [swapInputCoin] = tx.splitCoins(primaryCoin, [tx.pure(intent.inputAmount)]);
         }
         
-        let primaryCoin = tx.object(solverCoins[0]);
-        if (solverCoins.length > 1) {
-            tx.mergeCoins(primaryCoin, solverCoins.slice(1).map(id => tx.object(id)));
+        const deepCoins = await this.getSolverCoins(config.coins.DEEP);
+        let deepCoin;
+        if (deepCoins.length > 0) {
+            deepCoin = tx.object(deepCoins[0]);
+        } else {
+            [deepCoin] = tx.splitCoins(tx.gas, [tx.pure(0)]);
         }
         
-        const [swapInputCoin] = tx.splitCoins(primaryCoin, [tx.pure(intent.inputAmount)]);
-        
-        const [outputCoin, unusedInput] = tx.moveCall({
+        const [unusedBase, outputCoin, unusedDeep] = tx.moveCall({
             target: `${config.deepbook.package}::pool::swap_exact_base_for_quote`,
             arguments: [
                 tx.object(poolId),
                 swapInputCoin,
+                deepCoin,
                 tx.pure(minOutput),
                 tx.object('0x6'), // Clock
             ],
@@ -129,7 +141,7 @@ export class Executor {
             typeArguments: [intent.inputType, intent.outputType],
         });
         
-        tx.transferObjects([unusedInput], tx.pure(address));
+        tx.transferObjects([unusedBase, unusedDeep], tx.pure(address));
         
         return tx;
     }

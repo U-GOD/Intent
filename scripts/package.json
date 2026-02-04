@@ -4,9 +4,10 @@
   "description": "DeepBook integration scripts for SuiIntents",
   "type": "module",
   "scripts": {
-    "swap": "npx tsx deepbook-swap.ts",
+    "swap": "tsx deepbook-swap.ts",
     "query": "npx tsx query-pool.ts",
-    "fill": "npx tsx fill-intent.ts"
+    "fill": "tsx fill-intent.ts",
+    "create": "tsx create-intent.ts"
   },
   "dependencies": {
     "@mysten/sui.js": "^0.54.1"
