@@ -1,5 +1,11 @@
 // Solver Registry module for SuiIntents
 // Manages solver registration, staking, and reputation
+//
+// ARCHITECTURE:
+// - Solvers must register and stake tokens to participate
+// - Staking provides economic security (bad behavior = slashing)
+// - Reputation tracking rewards reliable solvers
+// - Only registered, active solvers can fill intents
 
 module suiintents::solver_registry {
     use sui::balance::{Self, Balance};
@@ -12,37 +18,44 @@ module suiintents::solver_registry {
     const E_SOLVER_NOT_ACTIVE: u64 = 102;
     const E_CANNOT_WITHDRAW_LOCKED: u64 = 103;
     
-    // Minimum stake required to register as solver (100 SUI)
-    const MIN_STAKE: u64 = 100_000_000_000;
+    // === Configuration ===
+    // TESTNET: 0.5 SUI (500_000_000 MIST) for demo purposes
+    // PRODUCTION: Change to 100 SUI (100_000_000_000 MIST) before mainnet deployment
+    const MIN_STAKE: u64 = 500_000_000; // 0.5 SUI for testnet
     
+    /// Solver registration object - shared on-chain for transparency
+    /// Each solver has their own Solver object that tracks their activity
     public struct Solver has key, store {
         id: UID,
-        owner: address,
-        stake: Balance<SUI>,
-        reputation: u64,
-        total_fills: u64,
-        successful_fills: u64,
-        is_active: bool,
+        owner: address,                // Wallet address that controls this solver
+        stake: Balance<SUI>,           // Locked collateral (can be slashed)
+        reputation: u64,               // Score based on performance (starts at 100)
+        total_fills: u64,              // Total intent fill attempts
+        successful_fills: u64,         // Successfully completed fills
+        is_active: bool,               // Whether solver can currently fill intents
     }
     
+    /// Emitted when a new solver registers
     public struct SolverRegistered has copy, drop {
         solver_id: ID,
         owner: address,
         stake_amount: u64,
     }
     
+    /// Emitted when solver stake changes
     public struct SolverStakeUpdated has copy, drop {
         solver_id: ID,
         new_stake: u64,
     }
     
+    /// Emitted when solver is penalized for bad behavior
     public struct SolverSlashed has copy, drop {
         solver_id: ID,
         slash_amount: u64,
-        reason: u64,
+        reason: u64,  // Error code indicating why slashed
     }
     
-    // Register as a new solver with stake
+    // === Public Entry Functions ===
     public entry fun register(
         stake: Coin<SUI>,
         ctx: &mut TxContext,

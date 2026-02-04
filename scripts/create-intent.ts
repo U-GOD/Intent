@@ -7,7 +7,7 @@ import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519';
 import { TransactionBlock } from '@mysten/sui.js/transactions';
 import { decodeSuiPrivateKey } from '@mysten/sui.js/cryptography';
 
-const PACKAGE_ID = '0x0f794d721f36b929ccdc62b4d5e556505064938a95f554c4fd1b86f20e5b3233';
+const PACKAGE_ID = '0x746214336352144bc6e048150ce2e9fef183c04671ebae8342f98bc4a77a484f';
 const REGISTRY_ID = '0x7f6c8a5af6cd8109b20eb8605398f9094f6749498413b65f8229ae062e5ca469';
 const DBUSDC_TYPE = '0xf7152c05930480cd740d7311b5b8b45c6f488e3a53a11c3f74a6fac36a52e0d7::DBUSDC::DBUSDC';
 
