@@ -85,12 +85,6 @@ export class Executor {
     
     /**
      * Builds the complete atomic PTB for filling an intent
-     * 
-     * Flow:
-     * 1. Prepare solver's coins (merge if needed)
-     * 2. Swap on DeepBook to get output tokens
-     * 3. Call fill_intent with the swapped output tokens
-     * 4. Everything is atomic - reverts together if any step fails
      */
     private async buildAtomicFillPTB(
         intent: IntentCreatedEvent,
@@ -100,24 +94,19 @@ export class Executor {
         const tx = new TransactionBlock();
         const address = this.keypair!.getPublicKey().toSuiAddress();
         
-        // Step 1: Get solver's coins to use for the swap
         const solverCoins = await this.getSolverCoins(intent.inputType);
         
         if (solverCoins.length === 0) {
             throw new Error(`No ${intent.inputType} coins available`);
         }
         
-        // Merge all coins of this type if multiple
         let primaryCoin = tx.object(solverCoins[0]);
         if (solverCoins.length > 1) {
             tx.mergeCoins(primaryCoin, solverCoins.slice(1).map(id => tx.object(id)));
         }
         
-        // Step 2: Split the amount needed for swap
         const [swapInputCoin] = tx.splitCoins(primaryCoin, [tx.pure(intent.inputAmount)]);
         
-        // Step 3: Swap on DeepBook to get output tokens
-        // This calls DeepBook's swap function atomically
         const [outputCoin, unusedInput] = tx.moveCall({
             target: `${config.deepbook.package}::pool::swap_exact_base_for_quote`,
             arguments: [
@@ -128,9 +117,7 @@ export class Executor {
             ],
             typeArguments: [intent.inputType, intent.outputType],
         });
-        
-        // Step 4: Fill the intent with the swapped output tokens
-        // This gives the output to the user and gives escrowed input to solver
+
         tx.moveCall({
             target: `${config.packageId}::intent::fill_intent`,
             arguments: [
@@ -142,7 +129,6 @@ export class Executor {
             typeArguments: [intent.inputType, intent.outputType],
         });
         
-        // Step 5: Return any unused input back to solver
         tx.transferObjects([unusedInput], tx.pure(address));
         
         return tx;
