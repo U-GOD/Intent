@@ -1,35 +1,86 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useCurrentAccount } from '@mysten/dapp-kit';
+import { Navbar } from './components/Navbar';
+import { SwapCard } from './components/SwapCard';
+import type { IntentData } from './components/SwapCard';
+import { InfoFooter } from './components/InfoFooter';
+import { BackgroundBlobs } from './components/BackgroundBlobs';
+import { Toast } from './components/Toast';
+import type { ToastData } from './components/Toast';
+import { useState } from 'react';
+import { TOKENS } from './config/tokens';
+import type { Token } from './config/tokens';
+import { useCreateIntent } from './hooks/useCreateIntent';
 
 function App() {
-  const [count, setCount] = useState(0)
+	const currentAccount = useCurrentAccount();
+	const { createIntent, isPending } = useCreateIntent();
+	const [toast, setToast] = useState<ToastData | null>(null);
 
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+	// Token State
+	const [sellToken, setSellToken] = useState<Token>(TOKENS[0]); // SUI
+	const [buyToken, setBuyToken] = useState<Token>(TOKENS[1]); // USDC
+
+	const handleCreateIntent = async (data: IntentData) => {
+		if (!currentAccount) return;
+
+		await createIntent(
+			data,
+			sellToken,
+			buyToken,
+			(digest) => {
+				setToast({
+					type: 'success',
+					title: 'Intent Created',
+					message: 'Your swap intent is now live. Solvers will compete to fill it.',
+					txDigest: digest,
+				});
+			},
+			(error) => {
+				setToast({
+					type: 'error',
+					title: 'Transaction Failed',
+					message: error.message || 'Failed to create intent',
+				});
+			}
+		);
+	};
+
+	return (
+		<div className="min-h-screen relative overflow-x-hidden antialiased selection:bg-[#4DA2FF] selection:text-white">
+			<BackgroundBlobs />
+			
+			<Navbar 
+				isConnected={!!currentAccount}
+				address={currentAccount?.address}
+			/>
+
+			<main className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-4 py-12 relative z-10">
+				{/* Headline */}
+				<h1 className="text-4xl md:text-5xl font-semibold tracking-tight text-[#0D1F3C] text-center mb-8 animate-fadeIn">
+					Swap with <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#4DA2FF] to-indigo-600">Intent</span>.
+				</h1>
+
+				<SwapCard 
+					onCreateIntent={handleCreateIntent}
+					isConnected={!!currentAccount}
+					isLoading={isPending}
+					sellToken={sellToken}
+					buyToken={buyToken}
+					onSetSellToken={setSellToken}
+					onSetBuyToken={setBuyToken}
+					sellBalance="--"
+					buyBalance="--"
+				/>
+
+				<InfoFooter 
+					exchangeRate={`1 ${sellToken.symbol} ~ ? ${buyToken.symbol}`}
+					gasFee="~$0.002"
+				/>
+			</main>
+
+			<Toast toast={toast} onClose={() => setToast(null)} />
+		</div>
+	);
 }
 
-export default App
+export default App;
