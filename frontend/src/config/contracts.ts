@@ -1,8 +1,8 @@
 // Deployed contract addresses (Testnet)
 export const CONTRACTS = {
-  // Version 2 (0.5 SUI stake)
-  PACKAGE_ID: '0x746214336352144bc6e048150ce2e9fef183c04671ebae8342f98bc4a77a484f',
-  REGISTRY_ID: '0x7f6c8a5af6cd8109b20eb8605398f9094f6749498413b65f8229ae062e5ca469',
+  // Version 3 (Auction Fix)
+  PACKAGE_ID: '0x20c655f1d8effe81dad9d6353ee1f10a753e512752f05c56b6e87ac024be1399',
+  REGISTRY_ID: '0x9bce53af9d1a7836d577fd1732c33803fe2aff0a2f7a545f4132e402c9ddfc11',
   
   // Modules
   MODULES: {
