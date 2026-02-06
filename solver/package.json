@@ -6,11 +6,22 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "watch": "tsx watch src/index.ts"
+    "start": "node --env-file=.env dist/index.js",
+    "dev": "tsx --env-file=.env src/index.ts",
+    "watch": "tsx --env-file=.env watch src/index.ts",
+    "list": "tsx --env-file=.env src/list-intents.ts",
+    "cancel": "tsx --env-file=.env src/cancel-intent.ts",
+    "fill": "tsx --env-file=.env src/manual-fill.ts",
+    "debug:events": "tsx --env-file=.env src/debug-events.ts",
+    "get-usdc": "tsx --env-file=.env src/get-usdc.ts",
+    "check-pools": "tsx --env-file=.env src/check-pools.ts",
+    "test-swap": "tsx --env-file=.env src/test-swap.ts",
+    "inspect": "tsx --env-file=.env src/inspect.ts",
+    "analyze": "tsx --env-file=.env src/analyze-tx.ts",
+    "check-balance": "tsx --env-file=.env src/check-balance.ts"
   },
   "dependencies": {
+    "@mysten/deepbook-v3": "^1.0.3",
     "@mysten/sui.js": "^0.54.1"
   },
   "devDependencies": {
