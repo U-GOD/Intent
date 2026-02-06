@@ -6,6 +6,7 @@ import { InfoFooter } from './components/InfoFooter';
 import { BackgroundBlobs } from './components/BackgroundBlobs';
 import { Toast } from './components/Toast';
 import type { ToastData } from './components/Toast';
+import { MyIntents } from './components/MyIntents';
 import { useState } from 'react';
 import { TOKENS } from './config/tokens';
 import type { Token } from './config/tokens';
@@ -15,6 +16,7 @@ function App() {
 	const currentAccount = useCurrentAccount();
 	const { createIntent, isPending } = useCreateIntent();
 	const [toast, setToast] = useState<ToastData | null>(null);
+	const [showMyIntents, setShowMyIntents] = useState(false);
 
 	// Token State
 	const [sellToken, setSellToken] = useState<Token>(TOKENS[0]); // SUI
@@ -52,6 +54,7 @@ function App() {
 			<Navbar 
 				isConnected={!!currentAccount}
 				address={currentAccount?.address}
+				onMyIntents={() => setShowMyIntents(true)}
 			/>
 
 			<main className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-4 py-12 relative z-10">
@@ -79,6 +82,12 @@ function App() {
 			</main>
 
 			<Toast toast={toast} onClose={() => setToast(null)} />
+			
+			<MyIntents 
+				isOpen={showMyIntents} 
+				onClose={() => setShowMyIntents(false)}
+				onToast={setToast}
+			/>
 		</div>
 	);
 }

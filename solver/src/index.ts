@@ -26,7 +26,9 @@ class Solver {
     private stats: Stats;
     
     constructor() {
-        const rpcUrl = getFullnodeUrl(config.network);
+        // Use QuickNode RPC from env, fallback to suiscan
+        const rpcUrl = process.env.RPC_URL || 'https://rpc-testnet.suiscan.xyz/';
+        console.log('  Using RPC:', rpcUrl.substring(0, 50) + '...');
         this.client = new SuiClient({ url: rpcUrl });
         this.eventListener = new EventListener(this.client, config.packageId);
         this.priceEngine = new PriceEngine(this.client);
