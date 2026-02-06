@@ -1,9 +1,9 @@
 /**
  * Event Listener - Subscribes to blockchain events
+ * With retry logic for handling transient network errors
  */
 
 import { SuiClient, SuiEvent } from '@mysten/sui.js/client';
-import { config } from './config.js';
 
 export interface IntentCreatedEvent {
     intentId: string;
@@ -31,6 +31,8 @@ export class EventListener {
     private handlers: EventHandler[] = [];
     private lastCursor: string | null = null;
     private polling: boolean = false;
+    private consecutiveErrors: number = 0;
+    private maxRetries: number = 5;
     
     constructor(client: SuiClient, packageId: string) {
         this.client = client;
@@ -46,8 +48,12 @@ export class EventListener {
         console.log('[EventListener] Started polling for events');
         
         while (this.polling) {
-            await this.pollEvents();
-            await this.sleep(intervalMs);
+            await this.pollEventsWithRetry();
+            // Use longer interval if we've had errors
+            const adjustedInterval = this.consecutiveErrors > 0 
+                ? intervalMs * Math.min(this.consecutiveErrors + 1, 5)
+                : intervalMs;
+            await this.sleep(adjustedInterval);
         }
     }
     
@@ -56,30 +62,53 @@ export class EventListener {
         console.log('[EventListener] Stopped polling');
     }
     
-    private async pollEvents(): Promise<void> {
+    private async pollEventsWithRetry(): Promise<void> {
         try {
-            const eventType = `${this.packageId}::intent::IntentCreated`;
-            
-            const events = await this.client.queryEvents({
-                query: { MoveEventType: eventType },
-                cursor: this.lastCursor ?? undefined,
-                limit: 50,
-                order: 'ascending',
-            });
-            
-            if (events.data.length > 0) {
-                console.log(`[EventListener] Found ${events.data.length} new events`);
-                
-                for (const event of events.data) {
-                    await this.processEvent(event);
-                }
-                
-                if (events.nextCursor) {
-                    this.lastCursor = events.nextCursor;
-                }
+            await this.pollEvents();
+            // Reset error counter on success
+            if (this.consecutiveErrors > 0) {
+                console.log('[EventListener] Connection restored');
+                this.consecutiveErrors = 0;
             }
         } catch (error) {
-            console.error('[EventListener] Error polling events:', error);
+            this.consecutiveErrors++;
+            const isConnReset = error instanceof Error && 
+                (error.message.includes('ECONNRESET') || 
+                 error.message.includes('fetch failed') ||
+                 error.cause?.toString().includes('ECONNRESET'));
+            
+            if (isConnReset && this.consecutiveErrors <= this.maxRetries) {
+                const backoffMs = Math.min(1000 * Math.pow(2, this.consecutiveErrors), 30000);
+                console.log(`[EventListener] Connection error (attempt ${this.consecutiveErrors}/${this.maxRetries}), retrying in ${backoffMs/1000}s...`);
+                await this.sleep(backoffMs);
+            } else if (this.consecutiveErrors > this.maxRetries) {
+                console.error('[EventListener] Max retries exceeded, will keep trying with longer intervals');
+            } else {
+                console.error('[EventListener] Error polling events:', error);
+            }
+        }
+    }
+    
+    private async pollEvents(): Promise<void> {
+        const eventType = `${this.packageId}::intent::IntentCreated`;
+        
+        const events = await this.client.queryEvents({
+            query: { MoveEventType: eventType },
+            cursor: this.lastCursor ?? undefined,
+            limit: 50,
+            order: 'ascending',
+        });
+        
+        if (events.data.length > 0) {
+            console.log(`[EventListener] Found ${events.data.length} new events`);
+            
+            for (const event of events.data) {
+                await this.processEvent(event);
+            }
+            
+            if (events.nextCursor) {
+                this.lastCursor = events.nextCursor;
+            }
         }
     }
     

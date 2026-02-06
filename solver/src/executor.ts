@@ -94,13 +94,9 @@ export class Executor {
         const tx = new TransactionBlock();
         const address = this.keypair!.getPublicKey().toSuiAddress();
         
-        // Check if we can fill directly from inventory (e.g. we have DEEP)
         const solverCoins = await this.getSolverCoins(intent.outputType);
         let outputCoin;
         
-        // Simple Inventory Logic: If we have the output coin, use it directly! 
-        // This is perfect for SUI -> DEEP flow where we have DEEP inventory
-        // (For production we might want to swap anyway to rebalance, but for demo this is safer)
         // Check for specific pair logic
         const isSuiToDeep = intent.inputType.includes('sui::SUI') && intent.outputType.includes('deep::DEEP');
 
@@ -123,9 +119,6 @@ export class Executor {
             if (intent.inputType === '0x2::sui::SUI' || intent.inputType.includes('::sui::SUI')) {
                  let amountToSwap = intent.inputAmount;
                  if (isSuiToDeep) {
-                     // Safety Strategy: Swap input + 10% buffer
-                     // Prevents "Whale Drain" while ensuring fill if price is reasonable.
-                     // If price is terrible, the transaction will fail (as it should).
                      amountToSwap = intent.inputAmount * 110n / 100n; 
                      console.log('[Executor] Safety Strategy: Swapping', amountToSwap, 'SUI (+10%)');
                  }
