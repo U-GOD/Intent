@@ -94,42 +94,106 @@ export class Executor {
         const tx = new TransactionBlock();
         const address = this.keypair!.getPublicKey().toSuiAddress();
         
-        // For SUI, use tx.gas to avoid conflicts with gas payment
-        let swapInputCoin;
-        if (intent.inputType === '0x2::sui::SUI' || intent.inputType.includes('::sui::SUI')) {
-            [swapInputCoin] = tx.splitCoins(tx.gas, [tx.pure(intent.inputAmount)]);
-        } else {
-            const solverCoins = await this.getSolverCoins(intent.inputType);
-            if (solverCoins.length === 0) {
-                throw new Error(`No ${intent.inputType} coins available`);
-            }
-            let primaryCoin = tx.object(solverCoins[0]);
+        // Check if we can fill directly from inventory (e.g. we have DEEP)
+        const solverCoins = await this.getSolverCoins(intent.outputType);
+        let outputCoin;
+        
+        // Simple Inventory Logic: If we have the output coin, use it directly! 
+        // This is perfect for SUI -> DEEP flow where we have DEEP inventory
+        // (For production we might want to swap anyway to rebalance, but for demo this is safer)
+        // Check for specific pair logic
+        const isSuiToDeep = intent.inputType.includes('sui::SUI') && intent.outputType.includes('deep::DEEP');
+
+        if (solverCoins.length > 0 && !isSuiToDeep) {
+            console.log('[Executor] Direct Fill: Using inventory for', intent.outputType);
+            
+            const primaryCoin = tx.object(solverCoins[0]);
             if (solverCoins.length > 1) {
                 tx.mergeCoins(primaryCoin, solverCoins.slice(1).map(id => tx.object(id)));
             }
-            [swapInputCoin] = tx.splitCoins(primaryCoin, [tx.pure(intent.inputAmount)]);
-        }
-        
-        const deepCoins = await this.getSolverCoins(config.coins.DEEP);
-        let deepCoin;
-        if (deepCoins.length > 0) {
-            deepCoin = tx.object(deepCoins[0]);
+            // Split the exact amount needed for the user
+            [outputCoin] = tx.splitCoins(primaryCoin, [tx.pure(minOutput)]);
+            
         } else {
-            [deepCoin] = tx.splitCoins(tx.gas, [tx.pure(0)]);
-        }
-        
-        const [unusedBase, outputCoin, unusedDeep] = tx.moveCall({
-            target: `${config.deepbook.package}::pool::swap_exact_base_for_quote`,
-            arguments: [
-                tx.object(poolId),
-                swapInputCoin,
-                deepCoin,
-                tx.pure(minOutput),
-                tx.object('0x6'), // Clock
-            ],
-            typeArguments: [intent.inputType, intent.outputType],
-        });
+            // Swap Logic (DeepBook)
+            console.log('[Executor] Swap Fill: Swapping on DeepBook for', intent.outputType);
 
+            // 1. Prepare Input Coin (to sell)
+            let swapInputCoin;
+            if (intent.inputType === '0x2::sui::SUI' || intent.inputType.includes('::sui::SUI')) {
+                 let amountToSwap = intent.inputAmount;
+                 if (isSuiToDeep) {
+                     // Safety Strategy: Swap input + 10% buffer
+                     // Prevents "Whale Drain" while ensuring fill if price is reasonable.
+                     // If price is terrible, the transaction will fail (as it should).
+                     amountToSwap = intent.inputAmount * 110n / 100n; 
+                     console.log('[Executor] Safety Strategy: Swapping', amountToSwap, 'SUI (+10%)');
+                 }
+                 [swapInputCoin] = tx.splitCoins(tx.gas, [tx.pure(amountToSwap)]);
+            } else {
+                const inputCoins = await this.getSolverCoins(intent.inputType);
+                if (inputCoins.length === 0) {
+                    throw new Error(`No ${intent.inputType} coins available for swap`);
+                }
+                let primaryCoin = tx.object(inputCoins[0]);
+                if (inputCoins.length > 1) {
+                    tx.mergeCoins(primaryCoin, inputCoins.slice(1).map(id => tx.object(id)));
+                }
+                [swapInputCoin] = tx.splitCoins(primaryCoin, [tx.pure(intent.inputAmount)]);
+            }
+
+            // 2. Prepare DEEP for fees
+            const deepCoins = await this.getSolverCoins(config.coins.DEEP);
+            let deepCoin;
+            if (deepCoins.length > 0) {
+                deepCoin = tx.object(deepCoins[0]);
+            } else {
+                if (isSuiToDeep) {
+                     throw new Error("No DEEP tokens found for fees!");
+                }
+                [deepCoin] = tx.splitCoins(tx.gas, [tx.pure(0)]);
+            }
+            
+            // 3. Execute Swap
+            let targetFunc = `${config.deepbook.package}::pool::swap_exact_base_for_quote`;
+            let typeArgs = [intent.inputType, intent.outputType];
+            let outputIndex = 1; // Default: Output is Quote (Index 1)
+
+            if (isSuiToDeep) {
+                // SUI->DEEP: selling Quote (SUI) to buy Base (DEEP).
+                targetFunc = `${config.deepbook.package}::pool::swap_exact_quote_for_base`;
+                typeArgs = [intent.outputType, intent.inputType]; // <Base, Quote>
+                outputIndex = 0; // Output is Base (Index 0)
+            }
+
+            console.log(`[Executor] Swap Func: ${targetFunc}`);
+            
+            const result = tx.moveCall({
+                target: targetFunc,
+                arguments: [
+                    tx.object(poolId),
+                    swapInputCoin,
+                    deepCoin,
+                    tx.pure(minOutput),
+                    tx.object('0x6'), // Clock
+                ],
+                typeArguments: typeArgs,
+            });
+            
+            // Assign output based on function
+            if (outputIndex === 0) {
+                 outputCoin = result[0]; // Base
+                 // Transfer remainders: [1] = Deep, [2] = Quote
+                 tx.transferObjects([result[1], result[2]], tx.pure(address));
+            } else {
+                 outputCoin = result[1]; // Quote
+                 // Transfer remainders: [0] = Base, [2] = Deep?
+                 tx.transferObjects([result[0], result[2]], tx.pure(address));
+            }
+        }
+
+        // 4. Fill the Intent
+        // This gives outputCoin to user, and solver gets the escrowed inputCoin
         tx.moveCall({
             target: `${config.packageId}::intent::fill_intent`,
             arguments: [
@@ -140,8 +204,6 @@ export class Executor {
             ],
             typeArguments: [intent.inputType, intent.outputType],
         });
-        
-        tx.transferObjects([unusedBase, unusedDeep], tx.pure(address));
         
         return tx;
     }
