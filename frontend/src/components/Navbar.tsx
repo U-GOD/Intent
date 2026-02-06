@@ -1,13 +1,14 @@
-import { Droplet, ChevronDown } from 'lucide-react';
+import { Droplet, ChevronDown, FileText } from 'lucide-react';
 import { ConnectButton } from '@mysten/dapp-kit';
 
 interface NavbarProps {
   onConnect?: () => void;
   isConnected: boolean;
   address?: string;
+  onMyIntents?: () => void;
 }
 
-export function Navbar({}: NavbarProps) {
+export function Navbar({ isConnected, onMyIntents }: NavbarProps) {
   return (
     <nav className="sticky top-0 z-50 w-full px-4 md:px-6 py-4 backdrop-blur-md bg-white/60 border-b border-slate-200/50">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -26,6 +27,16 @@ export function Navbar({}: NavbarProps) {
 
         {/* Wallet */}
         <div className="flex items-center gap-3">
+          {isConnected && onMyIntents && (
+            <button
+              onClick={onMyIntents}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors border border-slate-200 text-sm font-medium text-slate-600"
+            >
+              <FileText className="w-4 h-4" />
+              <span className="hidden md:inline">My Intents</span>
+            </button>
+          )}
+          
           <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors border border-transparent hover:border-slate-200">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <span className="text-sm font-medium text-slate-600">Sui Testnet</span>
