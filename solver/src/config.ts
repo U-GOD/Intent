@@ -5,9 +5,9 @@
 export const config = {
     network: (process.env.SUI_NETWORK as 'mainnet' | 'testnet' | 'devnet') || 'testnet',
     
-    // Deployed contract addresses (testnet) - V2 upgraded
-    packageId: '0x746214336352144bc6e048150ce2e9fef183c04671ebae8342f98bc4a77a484f',
-    registryId: '0x7f6c8a5af6cd8109b20eb8605398f9094f6749498413b65f8229ae062e5ca469',
+    // Deployed contract addresses (testnet) - V3 Auction Fix
+    packageId: '0x20c655f1d8effe81dad9d6353ee1f10a753e512752f05c56b6e87ac024be1399',
+    registryId: '0x9bce53af9d1a7836d577fd1732c33803fe2aff0a2f7a545f4132e402c9ddfc11',
     solverId: '0xaa0bfb1839dc9ac274f1cd7c9651b661ac28729f1bb684e7c434a1430788a274',
     
     // DeepBook V3 addresses (testnet) - Official from Mysten Labs docs
