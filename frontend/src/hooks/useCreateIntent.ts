@@ -29,11 +29,11 @@ export function useCreateIntent() {
         Math.floor(parseFloat(data.inputAmount) * Math.pow(10, sellToken.decimals))
       );
       
-      // Calculate min output based on slippage
+      // Calculate min output based on slippage (for reference/safety, though End Amount is primary)
       const outputVal = parseFloat(data.outputAmount || data.inputAmount);
-      const minOutputMist = BigInt(
-        Math.floor(outputVal * (1 - parseFloat(data.slippage) / 100) * Math.pow(10, buyToken.decimals))
-      );
+      // const minOutputMist = BigInt(
+      //   Math.floor(outputVal * (1 - parseFloat(data.slippage) / 100) * Math.pow(10, buyToken.decimals))
+      // );
 
       // Parse expiration to milliseconds
       const expirationMap: Record<string, number> = {
@@ -49,8 +49,18 @@ export function useCreateIntent() {
       };
       const durationMs = expirationMap[data.expiration] || 15 * 60 * 1000;
 
-      // Start rate (for Dutch auction, use min_output as start rate for simplicity)
-      const startRate = minOutputMist;
+      // Calculate Start and End amounts based on user's Rate inputs
+      const startRateVal = parseFloat(data.startRate || '1.0');
+      const endRateVal = parseFloat(data.endRate || '1.0');
+      const inputVal = parseFloat(data.inputAmount);
+      
+      const startAmountMist = BigInt(
+        Math.floor(inputVal * startRateVal * Math.pow(10, buyToken.decimals))
+      );
+      
+      const endAmountMist = BigInt(
+        Math.floor(inputVal * endRateVal * Math.pow(10, buyToken.decimals))
+      );
 
       // Split coin from gas (only works for SUI)
       let inputCoin;
@@ -62,22 +72,24 @@ export function useCreateIntent() {
       }
 
       // Call create_intent<T, U>
+      // New Signature: registry, input_coin, start_amount, end_amount, duration, clock
       tx.moveCall({
         target: `${CONTRACTS.PACKAGE_ID}::${CONTRACTS.MODULES.INTENT}::create_intent`,
         arguments: [
-          tx.object(CONTRACTS.REGISTRY_ID),  // registry: &mut IntentRegistry
-          inputCoin,                          // input_coin: Coin<T>
-          tx.pure.u64(minOutputMist),         // min_output: u64
-          tx.pure.u64(startRate),             // start_rate: u64
-          tx.pure.u64(durationMs),            // duration_ms: u64
-          tx.object('0x6'),                   // clock: &Clock
+          tx.object(CONTRACTS.REGISTRY_ID),  // registry
+          inputCoin,                          // input_coin
+          tx.pure.u64(startAmountMist),       // start_amount
+          tx.pure.u64(endAmountMist),         // end_amount
+          tx.pure.u64(durationMs),            // duration_ms
+          tx.object('0x6'),                   // clock
         ],
         typeArguments: [sellToken.type, buyToken.type],
       });
 
       console.log('Building transaction for create_intent...');
       console.log('Input:', data.inputAmount, sellToken.symbol, '=', inputAmountMist.toString(), 'MIST');
-      console.log('Min Output:', minOutputMist.toString(), buyToken.symbol);
+      console.log('Start Amount:', startAmountMist.toString(), buyToken.symbol);
+      console.log('End Amount:', endAmountMist.toString(), buyToken.symbol);
       console.log('Duration:', durationMs, 'ms');
 
       signAndExecute(
