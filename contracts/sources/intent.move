@@ -54,7 +54,7 @@ module suiintents::intent {
         input_amount: u64,
         output_type: TypeName,
         min_output: u64,
-        start_rate: u64,
+        start_amount: u64,
         deadline: u64,
     }
     
@@ -62,7 +62,7 @@ module suiintents::intent {
         intent_id: ID,
         solver: address,
         output_amount: u64,
-        fill_rate: u64,
+        fill_amount: u64,
     }
     
     public struct IntentCancelled has copy, drop {
@@ -88,8 +88,8 @@ module suiintents::intent {
     public entry fun create_intent<T, U>(
         registry: &mut IntentRegistry,
         input_coin: Coin<T>,
-        min_output: u64,
-        start_rate: u64,
+        start_amount: u64,
+        end_amount: u64,
         duration_ms: u64,
         clock: &Clock,
         ctx: &mut TxContext,
@@ -101,8 +101,8 @@ module suiintents::intent {
         
         // Create Dutch Auction using the module
         let auction = dutch_auction::new(
-            start_rate,
-            min_output, // end_rate
+            start_amount,
+            end_amount,
             current_time,
             duration_ms,
         );
@@ -115,7 +115,7 @@ module suiintents::intent {
             input_balance,
             input_amount,
             output_type: type_name::get<U>(),
-            min_output,
+            min_output: end_amount, // Min output is the auction end price
             deadline,
             status: STATUS_PENDING,
             auction,
@@ -130,8 +130,8 @@ module suiintents::intent {
             input_type: type_name::get<T>(),
             input_amount,
             output_type: type_name::get<U>(),
-            min_output,
-            start_rate,
+            min_output: end_amount,
+            start_amount,
             deadline,
         });
         
@@ -152,16 +152,18 @@ module suiintents::intent {
         assert!(intent.status == STATUS_PENDING, E_NOT_PENDING);
         assert!(current_time <= intent.deadline, E_INTENT_EXPIRED);
         
-        let _required_output = dutch_auction::calculate_required_output(
+        // Calculate required output based on current auction price
+        let required_output = dutch_auction::get_current_price(
             &intent.auction, 
-            intent.input_amount, 
             current_time
         );
         
         let output_amount = coin::value(&output_coin);
-        assert!(output_amount >= intent.min_output, E_BELOW_MIN_OUTPUT);
         
-        let fill_rate = dutch_auction::get_current_rate(&intent.auction, current_time);
+        // CRITICAL FIX: Assert output meets the CURRENT auction price, not just min_output
+        assert!(output_amount >= required_output, E_BELOW_MIN_OUTPUT);
+        
+        // Also implicitly satisfies min_output since required >= end_amount (min_output)
         
         let Intent {
             id,
@@ -189,7 +191,7 @@ module suiintents::intent {
             intent_id,
             solver,
             output_amount,
-            fill_rate,
+            fill_amount: required_output, // Log the required amount at fill time
         });
     }
     
