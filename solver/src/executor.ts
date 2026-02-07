@@ -135,15 +135,21 @@ export class Executor {
                 [swapInputCoin] = tx.splitCoins(primaryCoin, [tx.pure(intent.inputAmount)]);
             }
 
-            // 2. Prepare DEEP for fees
             const deepCoins = await this.getSolverCoins(config.coins.DEEP);
             let deepCoin;
+            
+            const FEE_AMOUNT = 10_000_000n; // 10 DEEP should be plenty for fees
+
             if (deepCoins.length > 0) {
-                deepCoin = tx.object(deepCoins[0]);
+                // Split off just enough for fees
+                const primaryDeep = tx.object(deepCoins[0]);
+                [deepCoin] = tx.splitCoins(primaryDeep, [tx.pure(FEE_AMOUNT)]);
             } else {
                 if (isSuiToDeep) {
-                     throw new Error("No DEEP tokens found for fees!");
+                     throw new Error("No DEEP tokens found for fees! Please fund solver with some DEEP.");
                 }
+                // If not SUI->DEEP (e.g. USDC->SUI), maybe we pay fee in DEEP?
+                // Just create zero coin if none exists (might fail if fee required)
                 [deepCoin] = tx.splitCoins(tx.gas, [tx.pure(0)]);
             }
             
@@ -162,7 +168,7 @@ export class Executor {
             console.log(`[Executor] Swap Func: ${targetFunc}`);
             
             const result = tx.moveCall({
-                target: targetFunc,
+                target: targetFunc as `${string}::${string}::${string}`,
                 arguments: [
                     tx.object(poolId),
                     swapInputCoin,
@@ -186,7 +192,6 @@ export class Executor {
         }
 
         // 4. Fill the Intent
-        // This gives outputCoin to user, and solver gets the escrowed inputCoin
         tx.moveCall({
             target: `${config.packageId}::intent::fill_intent`,
             arguments: [
