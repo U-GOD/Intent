@@ -1,4 +1,4 @@
-import { Droplet, ChevronDown, FileText } from 'lucide-react';
+import { Infinity, ChevronDown, FileText } from 'lucide-react';
 import { ConnectButton } from '@mysten/dapp-kit';
 
 interface NavbarProps {
@@ -13,12 +13,12 @@ export function Navbar({ isConnected, onMyIntents }: NavbarProps) {
     <nav className="sticky top-0 z-50 w-full px-4 md:px-6 py-4 backdrop-blur-md bg-white/60 border-b border-slate-200/50">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         {/* Logo */}
-        <div className="flex items-center gap-2 cursor-pointer group">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#4DA2FF] to-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform">
-            <Droplet className="w-5 h-5 fill-current" />
+        <a href="/" className="flex items-center gap-2 cursor-pointer group">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#4DA2FF] to-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 group-hover:scale-105 transition-transform">
+            <Infinity className="w-5 h-5" />
           </div>
-          <span className="text-lg font-semibold tracking-tight text-[#0D1F3C]">SuiIntents</span>
-        </div>
+          <span className="text-xl font-bold tracking-tight text-[#0D1F3C]">SuiIntents</span>
+        </a>
 
         {/* Tagline */}
         <div className="hidden md:flex items-center">
