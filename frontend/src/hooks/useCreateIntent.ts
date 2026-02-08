@@ -5,7 +5,7 @@ import type { IntentData } from '../components/SwapCard';
 import type { Token } from '../config/tokens';
 
 export function useCreateIntent() {
-  const suiClient = useSuiClient();
+  // const suiClient = useSuiClient();
   const currentAccount = useCurrentAccount();
   const { mutate: signAndExecute, isPending } = useSignAndExecuteTransaction();
 
@@ -30,7 +30,7 @@ export function useCreateIntent() {
       );
       
       // Calculate min output based on slippage (for reference/safety, though End Amount is primary)
-      const outputVal = parseFloat(data.outputAmount || data.inputAmount);
+      // const outputVal = parseFloat(data.outputAmount || data.inputAmount);
       // const minOutputMist = BigInt(
       //   Math.floor(outputVal * (1 - parseFloat(data.slippage) / 100) * Math.pow(10, buyToken.decimals))
       // );
